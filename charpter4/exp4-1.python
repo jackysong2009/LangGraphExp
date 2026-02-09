@@ -1,0 +1,58 @@
+from langgraph.graph import StateGraph, END
+from langchain_core.prompts import PromptTemplate
+from langchain_ollama import ChatOllama
+from typing import TypedDict, Optional
+from langchain_core.output_parsers import JsonOutputParser
+from pydantic import BaseModel
+
+# 定义Pydantic结构，用于解析与校验LLM输出内容
+class ParserOutput(BaseModel):
+    title: str
+    summary: str
+
+# 定义工作流状态结构，承载用户输入与解析后字段
+class ParseState(TypedDict):
+    user_input: str
+    title: Optional[str]
+    summary: Optional[str]
+
+# 初始化语言模型
+llm = ChatOllama(model="qwen3:8b", temperature=0, base_url="http://192.168.1.60:11434")
+parser = JsonOutputParser(pydantic_object=ParserOutput)
+
+# 构建Prompt模板，要求输出为JSON结构，确保可解析
+prompt = PromptTemplate.from_template(
+    "请根据以下内容提取标题和摘要，并以JSON格式返回：\n输出格式示例：{{\"title\": ..., \"summary\": ...}}:\n\n{text}"
+)
+chain = prompt | llm | parser   #构建链式调用，包含提示、LLM生成与输出解析
+
+# 节点函数：执行模型调用，并将结构化结果写入状态
+def llm_parse_node(state: ParseState) -> ParseState:
+    result = chain.invoke({"text": state["user_input"]})
+    obj = ParserOutput.model_validate(result)  # 使用Pydantic进行校验与解析
+    return {
+        "user_input": state["user_input"],
+        "title": obj.title,
+        "summary": obj.summary
+    }
+
+# 构建LangGraph流程
+builder = StateGraph(ParseState)
+builder.add_node("parse", llm_parse_node)
+builder.add_edge("parse", END)  # 解析完成后流程结束
+# 设置入口节点
+builder.set_entry_point("parse")
+graph = builder.compile()
+
+# 初始输入状态
+initial_state = {
+    "user_input": "请提取以下文本的标题和摘要：\n人工智能正在改变世界。它在医疗、教育、交通等领域带来了巨大的变革。未来，AI将继续推动社会进步。",
+    "title": None,
+    "summary": None
+}
+
+# 执行流程
+final_state = graph.invoke(initial_state)
+print("解析结果：")
+print(f"标题：{final_state['title']}")
+print(f"摘要：{final_state['summary']}")
