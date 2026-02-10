@@ -9,7 +9,7 @@ class StreamState(TypedDict):
     stream_output: Optional[str]
 
 # 初始化语言模型
-llm = ChatOllama(model="qwen3:8b", temperature=0, base_url="http://192.168.1.60:11434", streaming=True)
+llm = ChatOllama(model="qwen3:8b", temperature=0, base_url="http://127.0.0.1:11434", streaming=True)
 
 # 异步流式节点函数：实时接收生成结果并缓冲回填
 async def llm_stream_node(state: StreamState) -> StreamState:
