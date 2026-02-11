@@ -1,0 +1,103 @@
+import time
+import random
+from typing import TypedDict, Optional
+from langchain_core.tools import tool
+from langchain_classic.agents import AgentExecutor, create_tool_calling_agent
+from langchain_core.runnables import RunnableConfig
+from langgraph.graph import StateGraph, END
+from langchain_core.prompts import ChatPromptTemplate
+
+
+# 定义工作流状态结构
+class WorkflowState(TypedDict):
+    user_input: str
+    result: Optional[str]
+    retries: int
+    success: bool
+
+# 定义一个具有不稳定特性的工具（接口波动）
+@tool
+def flaky_tool(input_text: str) -> str:
+    """随机失败."""
+    ran_value = random.random()
+    print("random value is ", str(ran_value))
+    if ran_value < 0.5:
+        raise RuntimeError("临时错误：外部接口调用失败")
+    return f"处理完成：{input_text}"
+
+# 创建LangChain Agent（用于封装工具调用）
+from langchain_ollama import ChatOllama
+llm = ChatOllama(model="qwen3:8b", temperature=0, base_url="http://127.0.0.1:11434")
+tools = [flaky_tool]
+
+prompt = ChatPromptTemplate.from_messages(
+    [
+        ("system", "You MUST call the tool `flaky_tool` exactly once before answering. Do not answer without calling it."),
+        ("human", "{input}"),
+        ("placeholder", "{agent_scratchpad}"),
+    ]
+)
+agent = create_tool_calling_agent(llm, tools, prompt)
+agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+
+# 节点函数，包含幂等性检查与重试逻辑
+def robust_node(state:WorkflowState) -> WorkflowState:
+    if state["success"]:
+        # 幂等性保护：若已成功执行，则直接返回原状态
+        return state
+    
+    retries = state.get("retries", 0)
+    max_retries = 3
+
+    try:
+        # 尝试执行代理工具
+        result = agent_executor.invoke({"input":state["user_input"]})
+        return {
+            "user_input": state["user_input"],
+            "result": result["output"],
+            "retries": retries,
+            "success": True
+        }
+    except Exception as e:
+        retries += 1
+        print(f"[警告]第{retries}次重试失败：{e}")
+        if retries >= max_retries:
+            return {
+                "user_input": state["user_input"],
+                "result": f"执行失败:{str(e)}",
+                "retries": retries,
+                "success": False
+            }
+        else:
+            # 重新尝试（状态回传将触发再次执行）
+            return {
+                "user_input": state["user_input"],
+                "result": None,
+                "retries": retries,
+                "success": False
+            }
+
+# 构建LangGraph流程
+builder = StateGraph(WorkflowState)
+builder.add_node("robust_execution", robust_node)
+builder.set_entry_point("robust_execution")
+
+# 判断是否重试或结束
+def should_continue(state:WorkflowState) -> str:
+    return END if state["success"] or state["retries"] >= 3 else "robust_execution"
+
+builder.add_conditional_edges("robust_execution", should_continue)
+
+# 构建可执行图
+graph = builder.compile()
+
+# 执行图
+initial_state = {
+    "user_input": "请帮我提炼以下内容的意思:要站在推进强国建设、民族复兴伟业的战略高度，立足客观条件，发挥比较优势，坚持稳中求进、梯度培育，推动我国未来产业发展不断取得新突破。",
+    "result": None,
+    "retries": 0,
+    "success": False
+}
+
+final_state = graph.invoke(initial_state)
+print("\n最终结果：", final_state)
