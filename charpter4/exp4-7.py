@@ -49,6 +49,7 @@ def node_summarize(state: MemoryState) -> MemoryState:
     memory_1.chat_memory.messages = messages_from_dict(state["chat_history"])  # 恢复历史对话
     result = executor_1.invoke({"input": state["user_input"]})
     updated_history = messages_to_dict(memory_1.chat_memory.messages)  # 获取更新后的历史
+    print("总结生成完成，进入改进阶段...", updated_history)
     return {
         **state,
         "intermediate_response": result["output"],
@@ -60,6 +61,7 @@ def node_improve(state: MemoryState) -> MemoryState:
     memory_2.chat_memory.messages = messages_from_dict(state["chat_history"])  # 恢复历史对话
     result = executor_2.invoke({"input": state["intermediate_response"]})
     updated_history = messages_to_dict(memory_2.chat_memory.messages)  # 获取更新后的历史
+    print("改进建议生成完成，流程结束.", updated_history)
     return {
         **state,
         "final_response": result["output"],
