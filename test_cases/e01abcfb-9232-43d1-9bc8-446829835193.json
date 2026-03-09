@@ -1,0 +1,34 @@
+{
+  "input": "test input",
+  "trace": [
+    {
+      "node": "parse_input",
+      "input": {
+        "input": "test input"
+      },
+      "output": {
+        "input": "test input",
+        "intermediate": "TEST INPUT",
+        "output": ""
+      }
+    },
+    {
+      "node": "generate_response",
+      "input": {
+        "input": "test input",
+        "intermediate": "TEST INPUT",
+        "output": ""
+      },
+      "output": {
+        "input": "test input",
+        "intermediate": "TEST INPUT",
+        "output": "Response(TEST INPUT)"
+      }
+    }
+  ],
+  "final": {
+    "input": "test input",
+    "intermediate": "TEST INPUT",
+    "output": "Response(TEST INPUT)"
+  }
+}
